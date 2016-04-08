@@ -3,10 +3,12 @@ from slackclient import SlackClient
 import time
 import random
 from random import shuffle
-from time import time
+from time import time, sleep
 from copy import copy
 from collections import Counter
 import operator
+
+# TODO: Handle minimum number of players
 
 TOKEN = 'xoxb-30024975425-8gAM9q9u8EeD852FbO6j6gbt'
 ONENIGHT_BOT_NAME = 'onenight_bot'
@@ -105,8 +107,12 @@ class OneNightState():
                 players.append(p)
         return players
 
+    def flush_event_queue(self):
+        while len(self.sc.rtm_read()) != 0:
+            pass
 
     def listen(self, timeout=None):
+        self.flush_event_queue()
         self.is_listening = True
         t0 = time()
         while self.is_listening and (time() - t0 < timeout if timeout is not None else True):
@@ -123,71 +129,73 @@ class OneNightState():
     def process_message_seer(self, data):
         if self.is_dm_to_self(data):
             body = data['text'].lower()
-            if 'center' in body:
-                inds = [0, 1, 2].remove(random.randint(0, 2))
-                position_dict = {0: 'left', 1: 'center', 2: 'right'}
-                for i in inds:
-                    self.dm(data['channel'], 'The %s card is %s' % (position_dict[i], self.roles_on_table[i]))
-            else:
+            if body in self.players:
                 name = body
                 id = self.names_to_ids[name]
                 self.dm(data['channel'], '%s is the %s!' % (name, self.players[id]))
-            self.is_listening = False
+                self.is_listening = False
+            elif 'center' in body:
+                inds = [0, 1, 2]
+                inds.remove(random.randint(0, 2))
+                position_dict = {0: 'left', 1: 'center', 2: 'right'}
+                for i in inds:
+                    self.dm(data['channel'], 'The %s card is %s' % (position_dict[i], self.roles_on_table[i]))
+                self.is_listening = False
 
     def process_message_robber(self, data):
         if self.is_dm_to_self(data):
             body = data['text'].lower()
-            name = body
-            id = self.names_to_ids[name]
-            new_robber_role = self.players[id]
-            self.dm(data['channel'],
-                    'You switch cards with %s, and see that you are now the %s.' % (name, new_robber_role))
-            self.players[id] = self.players[data['user']]
-            self.players[data['user']] = new_robber_role
-            self.is_listening = False
+            if body in self.players:
+                id = self.names_to_ids[body]
+                new_robber_role = self.players[id]
+                self.dm(data['channel'],
+                        'You switch cards with %s, and see that you are now the %s.' % (body, new_robber_role))
+                self.players[id] = self.players[data['user']]
+                self.players[data['user']] = new_robber_role
+                self.is_listening = False
 
     def process_message_doppelganger(self, data):
         if self.is_dm_to_self(data):
             body = data['text'].lower()
-            name = body
-            id = self.names_to_ids[name]
-            self.doppelganger_role = self.players[id]
-            self.dm(data['channel'],
-                    "You look at %s's card, and see that you are now the %s." % (name, self.doppelganger_role))
-            if self.doppelganger_role == 'seer':
-                self.dm(data['channel'], "Reply with a player's name to look at their card (do not @ them), "
-                              "or 'center' to look at two of the cards on the table.")
-                self.process_message = self.process_message_seer
-                self.listen()
-            elif self.doppelganger_role == 'robber':
-                self.dm(data['channel'], "Reply with a player's name to switch cards with them (do not @ them.)")
-                self.process_message = self.process_message_robber
-                self.listen()
-            elif self.doppelganger_role == 'troublemaker':
-                self.dm(data['channel'], "Reply with the names of the two players whose cards you would "
-                                      "like to switch (do not @ them.)")
-                self.process_message = self.troublemaker_process_message
-                self.listen()
-            elif self.doppelganger_role == 'drunk':
-                inds = [0, 1, 2]
-                shuffle(inds)
-                position = inds[0]
-                position_dict = {0: 'left', 1: 'center', 2: 'right'}
-                self.dm(data['channel'], 'You switch your card with the %s card' % position_dict[position])
-            
-            if 'minion' in self.roles_in_play:
-                self.announce("If you are now a minion, keep your eyes open. Otherwise, close them. "
-                              "Werewolves, stick out your thumb so the Doppelganger-Minion can see who you are.")
-                if self.doppelganger_role == 'minion':
-                    werewolves = self.get_players_by_starting_role('werewolf')
-                    if len(werewolves) == 0:
-                        self.dm(data['channel'], "There are no werewolves.")
-                    if len(werewolves) == 1:
-                        self.dm(data['channel'], "%s is the only werewolf." % werewolves[0])
-                    else:
-                        self.dm(data['channel'], "The werewolves are %s and %s." % (werewolves[0], werewolves[1]))
-                self.announce("Werewolves, put your thumbs away. Doppelganger, close your eyes.")
-            self.is_listening = False
+            if body in self.players:
+                id = self.names_to_ids[body]
+                self.doppelganger_role = self.players[id]
+                self.dm(data['channel'],
+                        "You look at %s's card, and see that you are now the %s." % (body, self.doppelganger_role))
+                if self.doppelganger_role == 'seer':
+                    self.dm(data['channel'], "Reply with a player's name to look at their card (do not @ them), "
+                                  "or 'center' to look at two of the cards on the table.")
+                    self.process_message = self.process_message_seer
+                    self.listen()
+                elif self.doppelganger_role == 'robber':
+                    self.dm(data['channel'], "Reply with a player's name to switch cards with them (do not @ them.)")
+                    self.process_message = self.process_message_robber
+                    self.listen()
+                elif self.doppelganger_role == 'troublemaker':
+                    self.dm(data['channel'], "Reply with the names of the two players whose cards you would "
+                                          "like to switch (do not @ them.)")
+                    self.process_message = self.troublemaker_process_message
+                    self.listen()
+                elif self.doppelganger_role == 'drunk':
+                    inds = [0, 1, 2]
+                    shuffle(inds)
+                    position = inds[0]
+                    position_dict = {0: 'left', 1: 'center', 2: 'right'}
+                    self.dm(data['channel'], 'You switch your card with the %s card' % position_dict[position])
+
+                if 'minion' in self.roles_in_play:
+                    self.announce("If you are now a minion, keep your eyes open. Otherwise, close them. "
+                                  "Werewolves, stick out your thumb so the Doppelganger-Minion can see who you are.")
+                    if self.doppelganger_role == 'minion':
+                        werewolves = self.get_players_by_starting_role('werewolf')
+                        if len(werewolves) == 0:
+                            self.dm(data['channel'], "There are no werewolves.")
+                        if len(werewolves) == 1:
+                            self.dm(data['channel'], "%s is the only werewolf." % werewolves[0])
+                        else:
+                            self.dm(data['channel'], "The werewolves are %s and %s." % (werewolves[0], werewolves[1]))
+                    self.announce("Werewolves, put your thumbs away. Doppelganger, close your eyes.")
+                self.is_listening = False
 
     def process_message_nongame(self, data):
         if self.is_message_in_onenight_channel(data):
@@ -196,6 +204,7 @@ class OneNightState():
                 if 'start game' in body.lower() and not self.game_in_progress:
                     self.game_in_progress = True
                     print(self.game_in_progress)
+                    self.is_listening = False
                     self.game()
 
     def process_message_signup(self, data):
@@ -206,7 +215,8 @@ class OneNightState():
     def process_message_voting(self, data):
         if self.is_message_in_onenight_channel(data):
             if data['user'] != self.names_to_ids[self.onenight_bot_name]:
-                self.voting_dict[data['user']] == self.names_to_ids[data['text']]
+                if data['text'] in self.players and data['user'] not in self.voting_dict:
+                    self.voting_dict[data['user']] = self.names_to_ids[data['text']]
 
     def role_dispatch(self, role):
         return getattr(self, '%s_turn' % role)()
@@ -232,7 +242,7 @@ class OneNightState():
         if self.doppelganger_role == 'werewolf':
             werewolves += self.get_players_by_starting_role('doppelganger')[0]
         if len(werewolves) == 0:
-            time.sleep(8)
+            sleep(8)
         elif len(werewolves) == 1:
             self.dm(werewolves[0], 'You are the only werewolf, so you get to see a card from the table:')
             inds = [0, 1, 2]
@@ -255,7 +265,7 @@ class OneNightState():
         minions = self.get_players_by_starting_role('minion')
 
         if len(minions) == 0:
-            time.sleep(8)
+            sleep(8)
         else:
             minion = minions[0]
             werewolves = self.get_players_by_starting_role('werewolf')
@@ -277,7 +287,7 @@ class OneNightState():
         if self.doppelganger_role == 'mason':
             masons += self.get_players_by_starting_role('doppelganger')[0]
         if len(masons) == 0:
-            time.sleep(8)
+            sleep(8)
         elif len(masons) == 1:
             self.dm(masons[0], 'You are the only mason!')
         elif len(masons) == 2:
@@ -294,7 +304,7 @@ class OneNightState():
         self.announce("Seer, wake up. You may look at another player's card or two of the center cards.")
         seers = self.get_players_by_starting_role('seer')
         if len(seers) == 0:
-            time.sleep(8)
+            sleep(8)
         else:
             seer = seers[0]
             self.dm(seer, "Reply with a player's name to look at their card (do not @ them), "
@@ -310,7 +320,7 @@ class OneNightState():
                       "another player's card, and then view your new card.")
         robbers = self.get_players_by_starting_role('robber')
         if len(robbers) == 0:
-            time.sleep(8)
+            sleep(8)
         else:
             robber = robbers[0]
             self.dm(robber, "Reply with a player's name to switch cards with them (do not @ them.)")
@@ -325,7 +335,7 @@ class OneNightState():
                       "between two other players.")
         troublemakers = self.get_players_by_starting_role('troublemaker')
         if len(troublemakers) == 0:
-            time.sleep(8)
+            sleep(8)
         else:
             troublemaker = troublemakers[0]
             self.dm(troublemaker, "Reply with the names of the two players whose cards you would "
@@ -340,7 +350,7 @@ class OneNightState():
         self.announce("Drunk, wake up and exchange your card with a card from the center.")
         drunks = self.get_players_by_starting_role('drunk')
         if len(drunks) == 0:
-            time.sleep(8)
+            sleep(8)
         else:
             drunk = drunks[0]
             inds = [0, 1, 2]
@@ -354,7 +364,7 @@ class OneNightState():
         self.announce("Insomniac, wake up and look at your card.")
         insomniacs = self.get_players_by_starting_role('insomniac')
         if len(insomniacs) == 0:
-            time.sleep(8)
+            sleep(8)
         else:
             insomniac = insomniacs[0]
             self.dm(insomniac, "Your card is now the %s" % self.players[insomniac])
@@ -363,7 +373,7 @@ class OneNightState():
             self.announce("Doppelganger fi you viewed the Insomniac card, wake up and look at your card.")
             doppelgangers = self.get_players_by_starting_role('doppelganger')
             if len(doppelgangers) == 0:
-                time.sleep(8)
+                sleep(8)
             else:
                 doppelganger = doppelgangers[0]
                 self.dm(doppelganger, "Your card is now the %s" % self.players[doppelganger])
@@ -415,52 +425,57 @@ class OneNightState():
 
         self.announce("Everyone, wake up!")
         self.announce("You now have 6 minutes to discuss!")
-        time.sleep(350)
-        self.announce("There are 10 seconds left in discussion, when I say 'NOW!' you will have 5 seconds to "
-                      "say the name of the player you want to kill (do not @ them.)")
+        sleep(2)
+        self.announce("There are 10 seconds left in discussion!")
         for i in range(10, 0, -1):
+            t = time()
             self.announce("%d..." % i)
-            time.sleep(1)
-        self.announce("Now!")
-        self.user_message_whitelist = list(self.players.keys()  )
+            elapsed = time() - t
+            if elapsed < 1:
+                time.sleep(1-elapsed)
+        self.announce("VOTE NOW! You have 5 seconds to vote! Say the name of the player that you are voting "
+                      "to kill in this channel (do not @ them.) Your first vote is what will be counted!")
+        self.user_message_whitelist = list(self.players.keys())
         self.process_message = self.process_message_voting
         self.voting_dict = {}
         self.listen(5)
         vote_counts = dict(Counter(list(self.voting_dict.values())))
         most = max(vote_counts.values())
         killed_ids = [k for k in vote_counts if vote_counts[k] == most]
+        killed_names = [self.ids_to_names[k] for k in killed_ids]
         self.announce("VOTING IS CLOSED! The results are in...")
-        if len(killed_ids) == 1:
-            killed_message = killed_ids[0]
-        if len(killed_ids) == 2:
-            killed_message = killed_ids[0] + ' and ' + killed_ids[1]
-        if len(killed_ids) > 2:
-            killed_message = ', '.join(killed_ids[:-1]) + ', and ' + killed_ids[-1]
+        if len(killed_names) == 1:
+            killed_message = killed_names[0]
+        if len(killed_names) == 2:
+            killed_message = killed_names[0] + ' and ' + killed_names[1]
+        if len(killed_names) > 2:
+            killed_message = ', '.join(killed_names[:-1]) + ', and ' + killed_names[-1]
         self.announce(killed_message + ' will die!!!')
         self.announce("Let's look at their cards...")
         killed_roles = []
         for k in killed_ids:
             role = self.players[k]
-            self.announce("%s was the %s!" % (k, role))
+            self.announce("%s was the %s!" % (self.ids_to_names[k], role))
             if role == 'hunter':
                 hunter_vote = self.voting_dict[k]
-                self.announce("%s voted for %s, so they also die!" % (k, hunter_vote))
+                self.announce("%s voted for %s, so they also die!" % (self.ids_to_names[k], hunter_vote))
                 hunter_kill = self.players[hunter_vote]
-                self.announce("%s was the %s!" % (hunter_vote, hunter_kill))
+                self.announce("%s was the %s!" % (self.ids_to_names[hunter_vote], hunter_kill))
                 killed_roles.append(hunter_kill)
                 killed_roles.append(role)
             elif role == 'doppelganger':
                 self.announce("They viewed the %s card!" % self.doppelganger_role)
                 if self.doppelganger_role == 'hunter':
                     hunter_vote = self.voting_dict[k]
-                    self.announce("%s voted for %s, so they also die!" % (k, hunter_vote))
+                    self.announce("%s voted for %s, so they also die!" % (self.ids_to_names[k], hunter_vote))
                     hunter_kill = self.players[hunter_vote]
-                    self.announce("%s was the %s!" % (hunter_vote, hunter_kill))
+                    self.announce("%s was the %s!" % (self.ids_to_names[hunter_vote], hunter_kill))
                     killed_roles.append(hunter_kill)
                 killed_roles.append(self.doppelganger_role)
             else:
                 killed_roles.append(role)
         self.win_condition(killed_roles)
+        self.__init__()
 
 
 if __name__ == '__main__':
