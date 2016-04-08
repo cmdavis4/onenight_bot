@@ -1,17 +1,39 @@
 from slacker import Slacker
 from slackclient import SlackClient
 import time
-import random
-from random import shuffle
+from random import shuffle, random, randint
 from time import time, sleep
 from copy import copy
 from collections import Counter
 import operator
 
-# TODO: Handle minimum number of players
+# TODO: Test players sending dms during other players' turns
 
 TOKEN = 'xoxb-30024975425-8gAM9q9u8EeD852FbO6j6gbt'
 ONENIGHT_BOT_NAME = 'onenight_bot'
+
+DEBUG = True
+
+class take_minimum_time():
+
+    def __init__(self, min_time, fuzz=None):
+        self.min_time = min_time
+        self.fuzz = fuzz
+        if self.fuzz is not None:
+            assert self.min_time > fuzz
+
+    def __call__(self, f):
+        def wrapped_f(*args):
+            if self.fuzz is not None:
+                fuzzed_min = self.min_time + (random()*2*self.fuzz) - self.fuzz
+            else:
+                fuzzed_min = self.min_time
+            t = time()
+            f(*args)
+            elapsed = time() - t
+            if elapsed < fuzzed_min:
+                sleep(fuzzed_min - elapsed)
+        return wrapped_f
 
 class OneNightState():
 
@@ -94,6 +116,13 @@ class OneNightState():
             as_user=True
         )
 
+    def is_player_in_current_game(self, player_name):
+        try:
+            retval = self.names_to_ids[player_name] in self.players
+        except KeyError:
+            retval = False
+        return retval
+
     def is_dm_to_self(self, data):
         return data['channel'][0] == 'D'
 
@@ -129,7 +158,7 @@ class OneNightState():
     def process_message_seer(self, data):
         if self.is_dm_to_self(data):
             body = data['text'].lower()
-            if body in self.players:
+            if self.is_player_in_current_game(body):
                 name = body
                 id = self.names_to_ids[name]
                 self.dm(data['channel'], '%s is the %s!' % (name, self.players[id]))
@@ -145,7 +174,7 @@ class OneNightState():
     def process_message_robber(self, data):
         if self.is_dm_to_self(data):
             body = data['text'].lower()
-            if body in self.players:
+            if self.is_player_in_current_game(body):
                 id = self.names_to_ids[body]
                 new_robber_role = self.players[id]
                 self.dm(data['channel'],
@@ -157,7 +186,7 @@ class OneNightState():
     def process_message_doppelganger(self, data):
         if self.is_dm_to_self(data):
             body = data['text'].lower()
-            if body in self.players:
+            if self.is_player_in_current_game(body):
                 id = self.names_to_ids[body]
                 self.doppelganger_role = self.players[id]
                 self.dm(data['channel'],
@@ -215,8 +244,9 @@ class OneNightState():
     def process_message_voting(self, data):
         if self.is_message_in_onenight_channel(data):
             if data['user'] != self.names_to_ids[self.onenight_bot_name]:
-                if data['text'] in self.players and data['user'] not in self.voting_dict:
-                    self.voting_dict[data['user']] = self.names_to_ids[data['text']]
+                body = data['text'].lower()
+                if self.is_player_in_current_game(body) and data['user'] not in self.voting_dict:
+                    self.voting_dict[data['user']] = self.names_to_ids[body]
 
     def role_dispatch(self, role):
         return getattr(self, '%s_turn' % role)()
@@ -234,7 +264,6 @@ class OneNightState():
             self.process_message = self.process_message_doppelganger
             self.listen()
             self.user_message_whitelist = []
-
 
     def werewolf_turn(self):
         self.announce('Werewolves, wake up and look for other werewolves.')
@@ -399,10 +428,20 @@ class OneNightState():
         self.user_message_whitelist = []
         print(self.players)
         players_in_game_str = [self.ids_to_names[x] for x in list(self.players.keys())]
-        self.announce(players_in_game_str[0])
-        # self.announce(
-        #         ', '.join(players_in_game_str[:-1] + ', and ' + players_in_game_str[-1] + ' are playing.'))
-        self.announce('%s players are playing.' % len(self.players))
+
+        if not DEBUG:
+            if len(self.players) < 3:
+                self.announce("There are not enough players to start the game.")
+                self.__init__()
+                return
+            if len(self.players) > 10:
+                self.announce("There are too many players.")
+                self.__init__()
+                return
+            self.announce(
+                    ', '.join(players_in_game_str[:-1] + ', and ' + players_in_game_str[-1] + ' are playing.'))
+        if DEBUG:
+            self.announce('%s players are playing.' % len(self.players))
         self.announce('Roles will now be assigned!')
 
         # This part can and probably should be changed so which roles are in play is non-deterministic
@@ -432,7 +471,7 @@ class OneNightState():
             self.announce("%d..." % i)
             elapsed = time() - t
             if elapsed < 1:
-                time.sleep(1-elapsed)
+                sleep(1-elapsed)
         self.announce("VOTE NOW! You have 5 seconds to vote! Say the name of the player that you are voting "
                       "to kill in this channel (do not @ them.) Your first vote is what will be counted!")
         self.user_message_whitelist = list(self.players.keys())
