@@ -214,19 +214,7 @@ class OneNightState():
                     position_dict = {0: 'left', 1: 'center', 2: 'right'}
                     self.dm(data['channel'], 'You switch your card with the %s card' % position_dict[position])
 
-                if 'minion' in self.roles_in_play:
-                    self.announce("If you are now a minion, keep your eyes open. Otherwise, close them. "
-                                  "Werewolves, stick out your thumb so the Doppelganger-Minion can see who you are.")
-                    if self.doppelganger_role == 'minion':
-                        werewolves = self.get_players_by_starting_role('werewolf')
-                        if len(werewolves) == 0:
-                            self.dm(data['channel'], "There are no werewolves.")
-                        if len(werewolves) == 1:
-                            self.dm(data['channel'], "%s is the only werewolf." % werewolves[0])
-                        else:
-                            self.dm(data['channel'], "The werewolves are %s and %s." % (werewolves[0], werewolves[1]))
-                    self.announce("Werewolves, put your thumbs away. Doppelganger, close your eyes.")
-                self.is_listening = False
+
 
     def process_message_nongame(self, data):
         if self.is_message_in_onenight_channel(data):
@@ -239,23 +227,25 @@ class OneNightState():
                     self.game()
                     self.game_in_progress = False
                 elif 'add' in body.lower():
-                    role = body.split(' ')[-1]
-                    if role in OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER:
-                        if self.available_cards.count(role) == OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER.count(role):
-                            self.announce('Max number of %ss have already been added' % role)
-                        else:
-                            self.available_cards.append(role)
-                            self.announce("%s has been added, the cards in play are now:" % role)
-                            self.announce('\n'.join(sorted(self.available_cards)))
+                    roles = body.split('add ')[-1].split(', ')
+                    for role in roles:
+                        if role in OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER:
+                            if self.available_cards.count(role) == OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER.count(role):
+                                self.announce('Max number of %ss have already been added' % role)
+                            else:
+                                self.available_cards.append(role)
+                    self.announce("The cards in play are now:")
+                    self.announce('\n'.join(sorted(self.available_cards)))
                 elif 'remove' in body.lower():
-                    role = body.split(' ')[-1]
-                    if role in OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER:
-                        if role not in self.available_cards:
-                            self.announce('All %ss have already been removed.' % role)
-                        else:
-                            self.available_cards.remove(role)
-                            self.announce("%s has been removed, the cards in play are now:" % role)
-                            self.announce('\n'.join(sorted(self.available_cards)))
+                    roles = body.split('remove ')[-1].split(', ')
+                    for role in roles:
+                        if role in OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER:
+                            if role not in self.available_cards:
+                                self.announce('All %ss have already been removed.' % role)
+                            else:
+                                self.available_cards.remove(role)
+                    self.announce("The cards in play are now:")
+                    self.announce('\n'.join(sorted(self.available_cards)))
                 elif 'list roles' in body.lower():
                     self.announce("The cards in play are now:")
                     self.announce('\n'.join(sorted(self.available_cards)))
@@ -282,7 +272,7 @@ class OneNightState():
                       "that role. If your new role has a night action, do it now.")
         doppelgangers = self.get_players_by_starting_role('doppelganger')
         if len(doppelgangers) == 0:
-            self.sleep(16)
+            sleep(16)
         else:
             doppelganger = doppelgangers[0]
             self.dm(doppelganger, "Reply with a player's name to look at their card (do not @ them).")
@@ -290,6 +280,23 @@ class OneNightState():
             self.process_message = self.process_message_doppelganger
             self.listen()
             self.user_message_whitelist = []
+            self.is_listening = False
+        if 'minion' in self.roles_in_play:
+            self.announce("If you are now a minion, keep your eyes open. Otherwise, close them. "
+                          "Werewolves, stick out your thumb so the Doppelganger-Minion can see who you are.")
+            if self.doppelganger_role == 'minion':
+                werewolves = self.get_players_by_starting_role('werewolf')
+                if len(werewolves) == 0:
+                    self.dm(self.get_players_by_starting_role('doppelganger')[0],
+                            "There are no werewolves.")
+                if len(werewolves) == 1:
+                    self.dm(self.get_players_by_starting_role('doppelganger')[0],
+                            "%s is the only werewolf." % werewolves[0])
+                else:
+                    self.dm(self.get_players_by_starting_role('doppelganger')[0],
+                            "The werewolves are %s and %s." % (werewolves[0], werewolves[1]))
+            self.announce("Werewolves, put your thumbs away.")
+        self.announce("Doppelganger, close your eyes.")
 
     def werewolf_turn(self):
         self.announce('Werewolves, wake up and look for other werewolves.')
@@ -475,11 +482,13 @@ class OneNightState():
 
         self.announce('Roles will now be assigned!')
 
-        if len(self.available_cards) < len(self.players) + 3:
-            self.announce("Not enough cards have been included.")
+        if len(self.available_cards) != len(self.players) + 3 and not DEBUG:
+            self.announce("The wrong number of cards are in play for the current number of players. "
+                          "Please add or remove cards until there are 3 more than the number of players "
+                          "and start a new game.")
             self.__init__(self.available_cards)
             return
-        self.roles_in_play = self.available_cards[:len(self.players) + 3]
+        self.roles_in_play = copy(self.available_cards)
 
         players = list(self.players.keys())
         shuffle(self.roles_in_play)
@@ -498,7 +507,7 @@ class OneNightState():
 
         self.announce("Everyone, wake up!")
         self.announce("You now have 6 minutes to discuss!")
-        sleep(2)
+        sleep(2 if DEBUG else 300)
         self.announce("There are 10 seconds left in discussion!")
         for i in range(10, 0, -1):
             t = time()
@@ -512,6 +521,9 @@ class OneNightState():
         self.process_message = self.process_message_voting
         self.voting_dict = {}
         self.listen(5)
+        if len(self.voting_dict) == 0:
+            self.announce('No one voted? You guys suck!')
+            self.__init__(self.available_cards)
         vote_counts = dict(Counter(list(self.voting_dict.values())))
         most = max(vote_counts.values())
         killed_ids = [k for k in vote_counts if vote_counts[k] == most]
