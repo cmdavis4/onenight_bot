@@ -37,22 +37,22 @@ class take_minimum_time():
 
 class OneNightState():
 
-    ALL_ROLES_DEAL_ORDER = ['werewolf',
-                            'werewolf',
-                            'seer',
-                            'robber',
-                            'troublemaker',
-                            'villager',
-                            'villager',
-                            'villager',
-                            'minion',
-                            'insomniac',
-                            'drunk',
-                            'doppelganger',
-                            'hunter',
-                            'mason',
-                            'mason',
-                            'tanner']
+    ALL_ROLES_DEFAULT_DEAL_ORDER = ['werewolf',
+                                    'werewolf',
+                                    'seer',
+                                    'robber',
+                                    'troublemaker',
+                                    'villager',
+                                    'villager',
+                                    'villager',
+                                    'minion',
+                                    'insomniac',
+                                    'drunk',
+                                    'doppelganger',
+                                    'hunter',
+                                    'mason',
+                                    'mason',
+                                    'tanner']
 
     ALL_ROLES_TURN_ORDER = ['doppelganger',
                             'werewolf',
@@ -77,7 +77,7 @@ class OneNightState():
         'tanner': 'tanner'
     }
 
-    def __init__(self):
+    def __init__(self, available_cards=None):
         self.web = Slacker(TOKEN)
         self.sc = SlackClient(TOKEN)
         uid_response = self.web.users.list().body['members']
@@ -97,6 +97,8 @@ class OneNightState():
         self.dms_to_user_ids = {v: k for k, v in self.user_ids_to_dms.items()}
         self.team_dict = copy(OneNightState.TEAM_DICT)
         print(self.user_message_whitelist)
+        self.available_cards = (available_cards if available_cards is not None
+                                else copy(OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER))
         self.sc.rtm_connect()
 
     def announce(self, message):
@@ -228,13 +230,37 @@ class OneNightState():
 
     def process_message_nongame(self, data):
         if self.is_message_in_onenight_channel(data):
-            if data['text'].startswith(self.onenight_bot_token):
+            if data['text'].startswith(self.onenight_bot_token) and not self.game_in_progress:
                 body = data['text'][len(self.onenight_bot_token):]
-                if 'start game' in body.lower() and not self.game_in_progress:
+                if 'start game' in body.lower():
                     self.game_in_progress = True
                     print(self.game_in_progress)
                     self.is_listening = False
                     self.game()
+                    self.game_in_progress = False
+                elif 'add' in body.lower():
+                    role = body.split(' ')[-1]
+                    if role in OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER:
+                        if self.available_cards.count(role) == OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER.count(role):
+                            self.announce('Max number of %ss have already been added' % role)
+                        else:
+                            self.available_cards.append(role)
+                            self.announce("%s has been added, the cards in play are now:" % role)
+                            self.announce('\n'.join(sorted(self.available_cards)))
+                elif 'remove' in body.lower():
+                    role = body.split(' ')[-1]
+                    if role in OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER:
+                        if role not in self.available_cards:
+                            self.announce('All %ss have already been removed.' % role)
+                        else:
+                            self.available_cards.remove(role)
+                            self.announce("%s has been removed, the cards in play are now:" % role)
+                            self.announce('\n'.join(sorted(self.available_cards)))
+                elif 'list roles' in body.lower():
+                    self.announce("The cards in play are now:")
+                    self.announce('\n'.join(sorted(self.available_cards)))
+
+
 
     def process_message_signup(self, data):
         if self.is_message_in_onenight_channel(data):
@@ -432,20 +458,28 @@ class OneNightState():
         if not DEBUG:
             if len(self.players) < 3:
                 self.announce("There are not enough players to start the game.")
-                self.__init__()
+                self.__init__(self.available_cards)
                 return
             if len(self.players) > 10:
                 self.announce("There are too many players.")
-                self.__init__()
+                self.__init__(self.available_cards)
                 return
             self.announce(
                     ', '.join(players_in_game_str[:-1] + ', and ' + players_in_game_str[-1] + ' are playing.'))
         if DEBUG:
+            if len(self.players) == 0:
+                self.announce("Can't have 0 players.")
+                self.__init__(self.available_cards)
+                return
             self.announce('%s players are playing.' % len(self.players))
+
         self.announce('Roles will now be assigned!')
 
-        # This part can and probably should be changed so which roles are in play is non-deterministic
-        self.roles_in_play = OneNightState.ALL_ROLES_DEAL_ORDER[:len(self.players) + 3]
+        if len(self.available_cards) < len(self.players) + 3:
+            self.announce("Not enough cards have been included.")
+            self.__init__(self.available_cards)
+            return
+        self.roles_in_play = self.available_cards[:len(self.players) + 3]
 
         players = list(self.players.keys())
         shuffle(self.roles_in_play)
@@ -490,7 +524,7 @@ class OneNightState():
         if len(killed_names) > 2:
             killed_message = ', '.join(killed_names[:-1]) + ', and ' + killed_names[-1]
         self.announce(killed_message + ' will die!!!')
-        self.announce("Let's look at their cards...")
+        self.announce("Let's look at their card(s)...")
         killed_roles = []
         for k in killed_ids:
             role = self.players[k]
@@ -514,7 +548,7 @@ class OneNightState():
             else:
                 killed_roles.append(role)
         self.win_condition(killed_roles)
-        self.__init__()
+        self.__init__(self.available_cards)
 
 
 if __name__ == '__main__':
