@@ -8,11 +8,12 @@ from collections import Counter
 import operator
 
 # TODO: Test players sending dms during other players' turns
+# TODO: Make sure at least one werewolf-team card is included
 
 TOKEN = 'xoxb-30024975425-8gAM9q9u8EeD852FbO6j6gbt'
 ONENIGHT_BOT_NAME = 'onenight_bot'
 
-DEBUG = True
+DEBUG = False
 
 class take_minimum_time():
 
@@ -99,7 +100,6 @@ class OneNightState():
         print(self.user_message_whitelist)
         self.available_cards = (available_cards if available_cards is not None
                                 else copy(OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER))
-        self.sc.rtm_connect()
 
     def announce(self, message):
         self.web.chat.post_message(self.onenight_channel_id,
@@ -143,11 +143,14 @@ class OneNightState():
             pass
 
     def listen(self, timeout=None):
-        self.flush_event_queue()
-        self.is_listening = True
-        t0 = time()
-        while self.is_listening and (time() - t0 < timeout if timeout is not None else True):
-            self.process_events()
+        if self.sc.rtm_connect():
+            self.flush_event_queue()
+            self.is_listening = True
+            t0 = time()
+            while self.is_listening and (time() - t0 < timeout if timeout is not None else True):
+                self.process_events()
+        else:
+            raise IOError("Slack connection closed")
 
     def process_events(self):
         events = self.sc.rtm_read()
@@ -459,8 +462,8 @@ class OneNightState():
         self.players = {}
         self.listen(10)
         self.user_message_whitelist = []
-        print(self.players)
-        players_in_game_str = [self.ids_to_names[x] for x in list(self.players.keys())]
+        # print(self.players)
+        # players_in_game_str = [self.ids_to_names[x] for x in list(self.players.keys())]
 
         if not DEBUG:
             if len(self.players) < 3:
@@ -471,8 +474,8 @@ class OneNightState():
                 self.announce("There are too many players.")
                 self.__init__(self.available_cards)
                 return
-            self.announce(
-                    ', '.join(players_in_game_str[:-1] + ', and ' + players_in_game_str[-1] + ' are playing.'))
+            # self.announce(
+            #         ', '.join(players_in_game_str[:-1] + ', and ' + players_in_game_str[-1] + ' are playing.'))
         if DEBUG:
             if len(self.players) == 0:
                 self.announce("Can't have 0 players.")
@@ -482,13 +485,20 @@ class OneNightState():
 
         self.announce('Roles will now be assigned!')
 
-        if len(self.available_cards) != len(self.players) + 3 and not DEBUG:
-            self.announce("The wrong number of cards are in play for the current number of players. "
-                          "Please add or remove cards until there are 3 more than the number of players "
+        if len(self.available_cards) < len(self.players) + 3 and not DEBUG:
+            self.announce("Not enough cards are in play. "
+                          "Please add cards until there are at least 3 more than the number of players "
                           "and start a new game.")
             self.__init__(self.available_cards)
             return
-        self.roles_in_play = copy(self.available_cards)
+        roles_in_play = copy(self.available_cards)
+        shuffle(roles_in_play)
+
+        # Trim to correct number of cards
+        self.roles_in_play = roles_in_play[:len(self.players) + 3]
+        while 'werewolf' not in self.roles_in_play and 'minion' not in self.roles_in_play:
+            del self.roles_in_play[-1]
+            self.roles_in_play.append(roles_in_play.pop())
 
         players = list(self.players.keys())
         shuffle(self.roles_in_play)
@@ -506,8 +516,8 @@ class OneNightState():
                 self.role_dispatch(role)
 
         self.announce("Everyone, wake up!")
-        self.announce("You now have 6 minutes to discuss!")
-        sleep(2 if DEBUG else 300)
+        self.announce("You now have 3 minutes to discuss!")
+        sleep(2 if DEBUG else 170)
         self.announce("There are 10 seconds left in discussion!")
         for i in range(10, 0, -1):
             t = time()
