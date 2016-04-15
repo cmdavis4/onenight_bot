@@ -79,7 +79,8 @@ class OneNightState():
         'drunk': 'villager',
         'hunter': 'villager',
         'mason': 'villager',
-        'tanner': 'tanner'
+        'tanner': 'tanner',
+        'villager': 'villager'
     }
 
     def __init__(self, available_cards=None):
