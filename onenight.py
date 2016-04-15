@@ -8,10 +8,13 @@ from collections import Counter
 import operator
 
 # TODO: Test players sending dms during other players' turns
-# TODO: Make sure at least one werewolf-team card is included
+# TODO: Increase sleep time
+# TODO: Set defaults after timeout
 
 TOKEN = 'xoxb-30024975425-8gAM9q9u8EeD852FbO6j6gbt'
 ONENIGHT_BOT_NAME = 'onenight_bot'
+
+SLEEP_TIME = 10
 
 DEBUG = False
 
@@ -150,7 +153,7 @@ class OneNightState():
             while self.is_listening and (time() - t0 < timeout if timeout is not None else True):
                 self.process_events()
         else:
-            raise IOError("Slack connection closed")
+            raise IOError("Slack connection failed")
 
     def process_events(self):
         events = self.sc.rtm_read()
@@ -170,7 +173,7 @@ class OneNightState():
                 self.is_listening = False
             elif 'center' in body:
                 inds = [0, 1, 2]
-                inds.remove(random.randint(0, 2))
+                inds.remove(randint(0, 2))
                 position_dict = {0: 'left', 1: 'center', 2: 'right'}
                 for i in inds:
                     self.dm(data['channel'], 'The %s card is %s' % (position_dict[i], self.roles_on_table[i]))
@@ -275,7 +278,7 @@ class OneNightState():
                       "that role. If your new role has a night action, do it now.")
         doppelgangers = self.get_players_by_starting_role('doppelganger')
         if len(doppelgangers) == 0:
-            sleep(16)
+            sleep(1.5 * SLEEP_TIME)
         else:
             doppelganger = doppelgangers[0]
             self.dm(doppelganger, "Reply with a player's name to look at their card (do not @ them).")
@@ -307,7 +310,7 @@ class OneNightState():
         if self.doppelganger_role == 'werewolf':
             werewolves += self.get_players_by_starting_role('doppelganger')[0]
         if len(werewolves) == 0:
-            sleep(8)
+            pass
         elif len(werewolves) == 1:
             self.dm(werewolves[0], 'You are the only werewolf, so you get to see a card from the table:')
             inds = [0, 1, 2]
@@ -315,13 +318,14 @@ class OneNightState():
             inds_dict = {0: 'left', 1: 'center', 2: 'right'}
             self.dm(werewolves[0], 'The %s card is %s.' % (inds_dict[inds[0]], self.roles_on_table[inds[0]]))
         elif len(werewolves) == 2:
-            self.dm(werewolves[0], 'The other werewolf is %s!' % werewolves[1])
-            self.dm(werewolves[1], 'The other werewolf is %s!' % werewolves[0])
+            self.dm(werewolves[0], 'The other werewolf is %s!' % self.ids_to_names[werewolves[1]])
+            self.dm(werewolves[1], 'The other werewolf is %s!' % self.ids_to_names[werewolves[0]])
         elif len(werewolves) == 3:
             for i in range(3):
                 inds = [0, 1, 2]
                 inds.remove(i)
                 self.dm(werewolves[i], 'The other werewolves are %s and %s.' % (werewolves[inds[0]], werewolves[inds[1]]))
+        sleep(SLEEP_TIME)
         self.announce('Werewolves, close your eyes')
 
     def minion_turn(self):
@@ -330,7 +334,7 @@ class OneNightState():
         minions = self.get_players_by_starting_role('minion')
 
         if len(minions) == 0:
-            sleep(8)
+            pass
         else:
             minion = minions[0]
             werewolves = self.get_players_by_starting_role('werewolf')
@@ -339,11 +343,14 @@ class OneNightState():
             if len(werewolves) == 0:
                 self.dm(minion, "There are no werewolves.")
             elif len(werewolves) == 1:
-                self.dm(minion, "%s is the only werewolf." % werewolves[0])
+                self.dm(minion, "%s is the only werewolf." % self.ids_to_names[werewolves[0]])
             elif len(werewolves) == 2:
-                self.dm(minion, "The werewolves are %s and %s." % (werewolves[0], werewolves[1]))
+                self.dm(minion, "The werewolves are %s and %s." % (self.ids_to_names[werewolves[0]], self.ids_to_names[werewolves[1]]))
             elif len(werewolves) == 3:
-                self.dm(minion, "The werewolves are %s, %s, and %s." % (werewolves[0], werewolves[1], werewolves[2]))
+                self.dm(minion, "The werewolves are %s, %s, and %s." % (self.ids_to_names[werewolves[0]],
+                                                                        self.ids_to_names[werewolves[1]],
+                                                                        self.ids_to_names[werewolves[2]]))
+        sleep(SLEEP_TIME)
         self.announce("Minion, close your eyes.")
 
     def mason_turn(self):
@@ -352,24 +359,26 @@ class OneNightState():
         if self.doppelganger_role == 'mason':
             masons += self.get_players_by_starting_role('doppelganger')[0]
         if len(masons) == 0:
-            sleep(8)
+            pass
         elif len(masons) == 1:
             self.dm(masons[0], 'You are the only mason!')
         elif len(masons) == 2:
-            self.dm(masons[0], 'The other mason is %s!' % masons[1])
-            self.dm(masons[1], 'The other mason is %s!' % masons[0])
+            self.dm(masons[0], 'The other mason is %s!' % self.ids_to_names[masons[1]])
+            self.dm(masons[1], 'The other mason is %s!' % self.ids_to_names[masons[0]])
         elif len(masons) == 3:
             for i in range(3):
                 inds = [0, 1, 2]
                 inds.remove(i)
-                self.dm(masons[i], 'The other masons are %s and %s.' % (masons[inds[0]], masons[inds[1]]))
+                self.dm(masons[i], 'The other masons are %s and %s.' % (self.ids_to_names[masons[inds[0]]],
+                                                                        self.ids_to_names[masons[inds[1]]]))
+        sleep(SLEEP_TIME)
         self.announce("Masons, close your eyes.")
         
     def seer_turn(self):
         self.announce("Seer, wake up. You may look at another player's card or two of the center cards.")
         seers = self.get_players_by_starting_role('seer')
         if len(seers) == 0:
-            sleep(8)
+            sleep(SLEEP_TIME)
         else:
             seer = seers[0]
             self.dm(seer, "Reply with a player's name to look at their card (do not @ them), "
@@ -385,7 +394,7 @@ class OneNightState():
                       "another player's card, and then view your new card.")
         robbers = self.get_players_by_starting_role('robber')
         if len(robbers) == 0:
-            sleep(8)
+            sleep(SLEEP_TIME)
         else:
             robber = robbers[0]
             self.dm(robber, "Reply with a player's name to switch cards with them (do not @ them.)")
@@ -400,7 +409,7 @@ class OneNightState():
                       "between two other players.")
         troublemakers = self.get_players_by_starting_role('troublemaker')
         if len(troublemakers) == 0:
-            sleep(8)
+            sleep(SLEEP_TIME)
         else:
             troublemaker = troublemakers[0]
             self.dm(troublemaker, "Reply with the names of the two players whose cards you would "
@@ -415,7 +424,7 @@ class OneNightState():
         self.announce("Drunk, wake up and exchange your card with a card from the center.")
         drunks = self.get_players_by_starting_role('drunk')
         if len(drunks) == 0:
-            sleep(8)
+            pass
         else:
             drunk = drunks[0]
             inds = [0, 1, 2]
@@ -423,25 +432,28 @@ class OneNightState():
             position = inds[0]
             position_dict = {0: 'left', 1: 'center', 2: 'right'}
             self.dm(drunk, 'You switch your card with the %s card' % position_dict[position])
+        sleep(SLEEP_TIME)
         self.announce("Drunk, close your eyes.")
 
     def insomniac_turn(self):
         self.announce("Insomniac, wake up and look at your card.")
         insomniacs = self.get_players_by_starting_role('insomniac')
         if len(insomniacs) == 0:
-            sleep(8)
+            pass
         else:
             insomniac = insomniacs[0]
             self.dm(insomniac, "Your card is now the %s" % self.players[insomniac])
+        sleep(SLEEP_TIME)
         self.announce("Insomniac, close your eyes.")
         if 'doppelganger' in self.roles_in_play:
-            self.announce("Doppelganger fi you viewed the Insomniac card, wake up and look at your card.")
+            self.announce("Doppelganger, if you viewed the Insomniac card, wake up and look at your card.")
             doppelgangers = self.get_players_by_starting_role('doppelganger')
             if len(doppelgangers) == 0:
-                sleep(8)
+                pass
             else:
                 doppelganger = doppelgangers[0]
                 self.dm(doppelganger, "Your card is now the %s" % self.players[doppelganger])
+            sleep(SLEEP_TIME)
             self.announce("Doppelganger, close your eyes.")
 
     def win_condition(self, kills):
@@ -463,7 +475,7 @@ class OneNightState():
         self.listen(10)
         self.user_message_whitelist = []
         # print(self.players)
-        # players_in_game_str = [self.ids_to_names[x] for x in list(self.players.keys())]
+        players_in_game_str = [self.ids_to_names[x] for x in list(self.players.keys())]
 
         if not DEBUG:
             if len(self.players) < 3:
@@ -474,8 +486,8 @@ class OneNightState():
                 self.announce("There are too many players.")
                 self.__init__(self.available_cards)
                 return
-            # self.announce(
-            #         ', '.join(players_in_game_str[:-1] + ', and ' + players_in_game_str[-1] + ' are playing.'))
+            self.announce(
+                    ', '.join(players_in_game_str[:-1]) + ', and ' + players_in_game_str[-1] + ' are playing.')
         if DEBUG:
             if len(self.players) == 0:
                 self.announce("Can't have 0 players.")
@@ -483,7 +495,6 @@ class OneNightState():
                 return
             self.announce('%s players are playing.' % len(self.players))
 
-        self.announce('Roles will now be assigned!')
 
         if len(self.available_cards) < len(self.players) + 3 and not DEBUG:
             self.announce("Not enough cards are in play. "
@@ -496,10 +507,14 @@ class OneNightState():
 
         # Trim to correct number of cards
         self.roles_in_play = roles_in_play[:len(self.players) + 3]
-        while 'werewolf' not in self.roles_in_play and 'minion' not in self.roles_in_play:
+        while 'werewolf' not in self.roles_in_play:
             del self.roles_in_play[-1]
             self.roles_in_play.append(roles_in_play.pop())
 
+        self.announce('The following cards are in play:')
+        self.announce(', '.join(self.roles_in_play))
+
+        self.announce('Roles will now be assigned!')
         players = list(self.players.keys())
         shuffle(self.roles_in_play)
         shuffle(players)
@@ -569,15 +584,16 @@ class OneNightState():
                 killed_roles.append(self.doppelganger_role)
             else:
                 killed_roles.append(role)
+        self.announce("Everyone's roles were as follows:")
+        for p in self.players:
+            self.announce("%s: %s" % (self.ids_to_names[p], self.players[p]))
         self.win_condition(killed_roles)
         self.__init__(self.available_cards)
+        self.listen()
 
 
 if __name__ == '__main__':
     state = OneNightState()
+    print('second line of main')
     state.listen()
-
-
-
-
-
+ 
