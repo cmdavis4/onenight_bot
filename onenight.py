@@ -10,6 +10,7 @@ import operator
 # TODO: Test players sending dms during other players' turns
 # TODO: Increase sleep time
 # TODO: Set defaults after timeout
+# TODO: Fix doppelganger
 
 TOKEN = 'xoxb-30024975425-8gAM9q9u8EeD852FbO6j6gbt'
 ONENIGHT_BOT_NAME = 'onenight_bot'
@@ -219,6 +220,7 @@ class OneNightState():
                     position = inds[0]
                     position_dict = {0: 'left', 1: 'center', 2: 'right'}
                     self.dm(data['channel'], 'You switch your card with the %s card' % position_dict[position])
+                self.is_listening = False
 
 
 
@@ -584,7 +586,7 @@ class OneNightState():
                 killed_roles.append(self.doppelganger_role)
             else:
                 killed_roles.append(role)
-        self.announce("Everyone's roles were as follows:")
+        self.announce("Everyone's cards were as follows:")
         for p in self.players:
             self.announce("%s: %s" % (self.ids_to_names[p], self.players[p]))
         self.win_condition(killed_roles)
