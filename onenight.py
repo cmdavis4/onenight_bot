@@ -5,14 +5,18 @@ from random import shuffle, random, randint
 from time import time, sleep
 from copy import copy
 from collections import Counter
-import operator
+import pickle
 
-# TODO: Test players sending dms during other players' turns
-# TODO: Increase sleep time
 # TODO: Set defaults after timeout
-# TODO: Fix doppelganger
+# TODO: Pickle roles from previous game
+# TODO: Fix edit messages
+# TODO: Add quit game ability
+# TODO: Write process_message_troublemaker
+# TODO: Set discussion time from slack channel
+# TODO: Change player card reveal to '\n'.join() rather than separate messages
+# TODO: Add command explanation
 
-TOKEN = 'xoxb-30024975425-8gAM9q9u8EeD852FbO6j6gbt'
+TOKEN = 'xoxb-30024975425-vfqod8pGfkjn5Jor6NrVaksa'
 ONENIGHT_BOT_NAME = 'onenight_bot'
 
 SLEEP_TIME = 10
@@ -193,6 +197,20 @@ class OneNightState():
                 self.players[data['user']] = new_robber_role
                 self.is_listening = False
 
+    def process_message_troublemaker(self, data):
+        if self.is_dm_to_self(data):
+            body = data['text'].lower()
+            switched_players = body.split(', ')
+            if (len(switched_players) == 2 and
+                False not in [self.is_player_in_current_game(p) for p in switched_players]):
+                ids = [self.names_to_ids[p] for p in switched_players]
+                first_player_role = self.players[ids[0]]
+                self.dm(data['channel'],
+                        "You switch %s's and %s's cards." % (switched_players[0], switched_players[1]))
+                self.players[ids[0]] = self.players[ids[1]]
+                self.players[ids[1]] = first_player_role
+                self.is_listening = False
+
     def process_message_doppelganger(self, data):
         if self.is_dm_to_self(data):
             body = data['text'].lower()
@@ -213,7 +231,7 @@ class OneNightState():
                 elif self.doppelganger_role == 'troublemaker':
                     self.dm(data['channel'], "Reply with the names of the two players whose cards you would "
                                           "like to switch (do not @ them.)")
-                    self.process_message = self.troublemaker_process_message
+                    self.process_message = self.process_message_troublemaker
                     self.listen()
                 elif self.doppelganger_role == 'drunk':
                     inds = [0, 1, 2]
@@ -223,12 +241,11 @@ class OneNightState():
                     self.dm(data['channel'], 'You switch your card with the %s card' % position_dict[position])
                 self.is_listening = False
 
-
-
     def process_message_nongame(self, data):
         if self.is_message_in_onenight_channel(data):
             if data['text'].startswith(self.onenight_bot_token) and not self.game_in_progress:
                 body = data['text'][len(self.onenight_bot_token):]
+                print(body)
                 if 'start game' in body.lower():
                     self.game_in_progress = True
                     print(self.game_in_progress)
@@ -258,6 +275,8 @@ class OneNightState():
                 elif 'list roles' in body.lower():
                     self.announce("The cards in play are now:")
                     self.announce('\n'.join(sorted(self.available_cards)))
+                elif body.lower().split(':')[-1].strip() == 'sup':
+                    self.announce('SUPWITCHU')
 
 
 
@@ -404,7 +423,7 @@ class OneNightState():
             self.process_message = self.process_message_robber
             self.user_message_whitelist = [robber]
             self.listen()
-            self.user_message_whitelist = None
+            self.user_message_whitelist = []
         self.announce("Robber, close your eyes.")
 
     def troublemaker_turn(self):
@@ -415,12 +434,13 @@ class OneNightState():
             sleep(SLEEP_TIME)
         else:
             troublemaker = troublemakers[0]
-            self.dm(troublemaker, "Reply with the names of the two players whose cards you would "
-                                  "like to switch (do not @ them.)")
+            self.dm(troublemaker, "Reply with  the names of the two players"
+                                  "whose cards you would like to switch (do not @ them,) "
+                                  "formatted as e.g. 'alice, bob'")
             self.user_message_whitelist = [troublemaker]
-            self.process_message = self.troublemaker_process_message
-            self.user_message_whitelist = []
+            self.process_message = self.process_message_troublemaker
             self.listen()
+            self.user_message_whitelist = []
         self.announce("Troublemaker, close your eyes.")
 
     def drunk_turn(self):
@@ -453,7 +473,7 @@ class OneNightState():
             doppelgangers = self.get_players_by_starting_role('doppelganger')
             if len(doppelgangers) == 0:
                 pass
-            else:
+            elif self.doppelganger_role == 'insomniac':
                 doppelganger = doppelgangers[0]
                 self.dm(doppelganger, "Your card is now the %s" % self.players[doppelganger])
             sleep(SLEEP_TIME)
