@@ -11,8 +11,6 @@ import pickle
 # TODO: Pickle roles from previous game
 # TODO: Fix edit messages
 # TODO: Add quit game ability
-# TODO: Write process_message_troublemaker
-# TODO: Set discussion time from slack channel
 # TODO: Add command explanation
 # TODO: Handle removal of all roles (i.e. when andrew is an asshole)
 
@@ -497,12 +495,15 @@ class OneNightState():
         killed_teams = [self.team_dict[k] for k in kills]
         if 'tanner' in killed_teams:
             self.announce("Tanner wins!")
-        if 'villager' in killed_teams and 'werewolf' not in killed_teams:
-            self.announce("Werewolves win!")
-        elif 'werewolf' in killed_teams and 'villager' not in killed_teams:
+        if 'werewolf' in killed_teams:
             self.announce("Villagers win!")
-        elif 'werewolf' in killed_teams and 'villager' in killed_teams:
-            self.announce("Werewolves and villagers lose!")
+        elif len(killed_teams) == 0:
+            if 'werewolf' in self.players.values():
+                self.announce("Werewolves win!")
+            else:
+                self.announce("Villagers win!")
+        else:
+            self.announce("Werewolves win!")
 
     def game(self):
         self.announce('The game is starting, if you are joining say something in the next ten seconds!')
@@ -591,36 +592,40 @@ class OneNightState():
         killed_ids = [k for k in vote_counts if vote_counts[k] == most]
         killed_names = [self.ids_to_names[k] for k in killed_ids]
         self.announce("VOTING IS CLOSED! The results are in...")
-        if len(killed_names) == 1:
-            killed_message = killed_names[0]
-        if len(killed_names) == 2:
-            killed_message = killed_names[0] + ' and ' + killed_names[1]
-        if len(killed_names) > 2:
-            killed_message = ', '.join(killed_names[:-1]) + ', and ' + killed_names[-1]
-        self.announce(killed_message + ' will die!!!')
-        self.announce("Let's look at their card(s)...")
-        killed_roles = []
-        for k in killed_ids:
-            role = self.players[k]
-            self.announce("%s was the %s!" % (self.ids_to_names[k], role))
-            if role == 'hunter':
-                hunter_vote = self.voting_dict[k]
-                self.announce("%s voted for %s, so they also die!" % (self.ids_to_names[k], hunter_vote))
-                hunter_kill = self.players[hunter_vote]
-                self.announce("%s was the %s!" % (self.ids_to_names[hunter_vote], hunter_kill))
-                killed_roles.append(hunter_kill)
-                killed_roles.append(role)
-            elif role == 'doppelganger':
-                self.announce("They viewed the %s card!" % self.doppelganger_role)
-                if self.doppelganger_role == 'hunter':
+        if most == 1:
+            self.announce("No one dies!")
+            self.killed_roles = []
+        else:
+            if len(killed_names) == 1:
+                killed_message = killed_names[0]
+            if len(killed_names) == 2:
+                killed_message = killed_names[0] + ' and ' + killed_names[1]
+            if len(killed_names) > 2:
+                killed_message = ', '.join(killed_names[:-1]) + ', and ' + killed_names[-1]
+            self.announce(killed_message + ' will die!!!')
+            self.announce("Let's look at their card(s)...")
+            killed_roles = []
+            for k in killed_ids:
+                role = self.players[k]
+                self.announce("%s was the %s!" % (self.ids_to_names[k], role))
+                if role == 'hunter':
                     hunter_vote = self.voting_dict[k]
                     self.announce("%s voted for %s, so they also die!" % (self.ids_to_names[k], hunter_vote))
                     hunter_kill = self.players[hunter_vote]
                     self.announce("%s was the %s!" % (self.ids_to_names[hunter_vote], hunter_kill))
                     killed_roles.append(hunter_kill)
-                killed_roles.append(self.doppelganger_role)
-            else:
-                killed_roles.append(role)
+                    killed_roles.append(role)
+                elif role == 'doppelganger':
+                    self.announce("They viewed the %s card!" % self.doppelganger_role)
+                    if self.doppelganger_role == 'hunter':
+                        hunter_vote = self.voting_dict[k]
+                        self.announce("%s voted for %s, so they also die!" % (self.ids_to_names[k], hunter_vote))
+                        hunter_kill = self.players[hunter_vote]
+                        self.announce("%s was the %s!" % (self.ids_to_names[hunter_vote], hunter_kill))
+                        killed_roles.append(hunter_kill)
+                    killed_roles.append(self.doppelganger_role)
+                else:
+                    killed_roles.append(role)
         self.announce("Everyone's cards were as follows:")
         self.announce('\n'.join(["%s: %s" % (self.ids_to_names[p], self.players[p]) for p in players]))
         self.win_condition(killed_roles)
