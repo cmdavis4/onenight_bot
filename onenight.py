@@ -13,8 +13,8 @@ import pickle
 # TODO: Add quit game ability
 # TODO: Write process_message_troublemaker
 # TODO: Set discussion time from slack channel
-# TODO: Change player card reveal to '\n'.join() rather than separate messages
 # TODO: Add command explanation
+# TODO: Handle removal of all roles (i.e. when andrew is an asshole)
 
 TOKEN = 'xoxb-30024975425-vfqod8pGfkjn5Jor6NrVaksa'
 ONENIGHT_BOT_NAME = 'onenight_bot'
@@ -87,7 +87,7 @@ class OneNightState():
         'villager': 'villager'
     }
 
-    def __init__(self, available_cards=None):
+    def __init__(self, prev_params=(None, 5)):
         self.web = Slacker(TOKEN)
         self.sc = SlackClient(TOKEN)
         uid_response = self.web.users.list().body['members']
@@ -107,8 +107,11 @@ class OneNightState():
         self.dms_to_user_ids = {v: k for k, v in self.user_ids_to_dms.items()}
         self.team_dict = copy(OneNightState.TEAM_DICT)
         print(self.user_message_whitelist)
+        available_cards, discussion_time = prev_params
         self.available_cards = (available_cards if available_cards is not None
                                 else copy(OneNightState.ALL_ROLES_DEFAULT_DEAL_ORDER))
+        self.discussion_time = discussion_time
+        self.prev_params = (self.available_cards, self.discussion_time)
 
     def announce(self, message):
         self.web.chat.post_message(self.onenight_channel_id,
@@ -277,6 +280,17 @@ class OneNightState():
                     self.announce('\n'.join(sorted(self.available_cards)))
                 elif body.lower().split(':')[-1].strip() == 'sup':
                     self.announce('SUPWITCHU')
+                elif 'set time' in body.lower():
+                    duration = body.split('set time')[-1].strip()
+                    try:
+                        self.discussion_time = int(duration)
+                        self.prev_params = (self.available_cards, self.discussion_time)
+                        self.announce("Discussion will now last %d minutes." % self.discussion_time)
+                    except ValueError:
+                        pass
+
+
+
 
 
 
@@ -503,18 +517,18 @@ class OneNightState():
         if not DEBUG:
             if len(self.players) < 3:
                 self.announce("There are not enough players to start the game.")
-                self.__init__(self.available_cards)
+                self.__init__(self.prev_params)
                 return
             if len(self.players) > 10:
                 self.announce("There are too many players.")
-                self.__init__(self.available_cards)
+                self.__init__(self.prev_params)
                 return
             self.announce(
                     ', '.join(players_in_game_str[:-1]) + ', and ' + players_in_game_str[-1] + ' are playing.')
         if DEBUG:
             if len(self.players) == 0:
                 self.announce("Can't have 0 players.")
-                self.__init__(self.available_cards)
+                self.__init__(self.prev_params)
                 return
             self.announce('%s players are playing.' % len(self.players))
 
@@ -523,7 +537,7 @@ class OneNightState():
             self.announce("Not enough cards are in play. "
                           "Please add cards until there are at least 3 more than the number of players "
                           "and start a new game.")
-            self.__init__(self.available_cards)
+            self.__init__(self.prev_params)
             return
         roles_in_play = copy(self.available_cards)
         shuffle(roles_in_play)
@@ -555,7 +569,7 @@ class OneNightState():
 
         self.announce("Everyone, wake up!")
         self.announce("You now have 3 minutes to discuss!")
-        sleep(2 if DEBUG else 170)
+        sleep(2 if DEBUG else (60*self.discussion_time) - 10)
         self.announce("There are 10 seconds left in discussion!")
         for i in range(10, 0, -1):
             t = time()
@@ -571,7 +585,7 @@ class OneNightState():
         self.listen(5)
         if len(self.voting_dict) == 0:
             self.announce('No one voted? You guys suck!')
-            self.__init__(self.available_cards)
+            self.__init__(self.prev_params)
         vote_counts = dict(Counter(list(self.voting_dict.values())))
         most = max(vote_counts.values())
         killed_ids = [k for k in vote_counts if vote_counts[k] == most]
@@ -608,10 +622,9 @@ class OneNightState():
             else:
                 killed_roles.append(role)
         self.announce("Everyone's cards were as follows:")
-        for p in self.players:
-            self.announce("%s: %s" % (self.ids_to_names[p], self.players[p]))
+        self.announce('\n'.join(["%s: %s" % (self.ids_to_names[p], self.players[p]) for p in players]))
         self.win_condition(killed_roles)
-        self.__init__(self.available_cards)
+        self.__init__(self.prev_params)
         self.listen()
 
 
