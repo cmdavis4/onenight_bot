@@ -495,13 +495,15 @@ class OneNightState():
         killed_teams = [self.team_dict[k] for k in kills]
         if 'tanner' in killed_teams:
             self.announce("Tanner wins!")
-        if 'werewolf' in killed_teams:
+        if (
+            'werewolf' in killed_teams or
+            (
+                     len(killed_teams) == 0 and
+                     'werewolf' not in self.players.values() and
+                     self.doppelganger_role != 'werewolf'
+            )
+           ):
             self.announce("Villagers win!")
-        elif len(killed_teams) == 0:
-            if 'werewolf' in self.players.values():
-                self.announce("Werewolves win!")
-            else:
-                self.announce("Villagers win!")
         else:
             self.announce("Werewolves win!")
 
