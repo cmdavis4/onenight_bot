@@ -1,6 +1,7 @@
 from slacker import Slacker
 from slackclient import SlackClient
 import time
+import os
 from random import shuffle, random, randint
 from time import time, sleep
 from copy import copy
@@ -12,9 +13,10 @@ import pickle
 # TODO: Fix edit messages
 # TODO: Add quit game ability
 # TODO: Add command explanation
-# TODO: Handle removal of all roles (i.e. when andrew is an asshole)
+# TODO: Add game explanation
 
-TOKEN = 'xoxb-30024975425-vfqod8pGfkjn5Jor6NrVaksa'
+with open('token', 'rb') as f:
+    TOKEN = pickle.load(f)
 ONENIGHT_BOT_NAME = 'onenight_bot'
 
 SLEEP_TIME = 10
