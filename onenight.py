@@ -16,8 +16,12 @@ import pickle
 # TODO: Add game explanation
 
 with open('token', 'rb') as f:
-    TOKEN = pickle.load(f)
-ONENIGHT_BOT_NAME = 'onenight_bot'
+    config = pickle.load(f)
+    TOKEN = config['token']
+    ONENIGHT_BOT_NAME = config['bot_name']
+    ONENIGHT_CHANNEL_NAME = config['channel_name']
+    #  ONENIGHT_BOT_NAME = 'onenight_bot'
+    # ONENIGHT_CHANNEL_NAME = 'onenight'
 
 SLEEP_TIME = 10
 
@@ -95,7 +99,7 @@ class OneNightState():
         self.ids_to_names = {v: k for k, v in self.names_to_ids.items()}
         self.game_in_progress = False
         self.onenight_channel_id = [x['id'] for x in self.web.channels.list().body['channels']
-                                    if x['name'] == 'onenight'][0]
+                                    if x['name'] == ONENIGHT_CHANNEL_NAME][0]
         self.onenight_bot_name = ONENIGHT_BOT_NAME
         self.onenight_bot_token = '<@%s>' % self.names_to_ids[self.onenight_bot_name]
         self.process_message = self.process_message_nongame
@@ -639,6 +643,5 @@ class OneNightState():
 
 if __name__ == '__main__':
     state = OneNightState()
-    print('second line of main')
     state.listen()
  
