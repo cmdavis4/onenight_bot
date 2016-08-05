@@ -9,11 +9,16 @@ from collections import Counter
 import pickle
 
 # TODO: Set defaults after timeout
-# TODO: Pickle roles from previous game
+# TODO: Pickle roles/settings from previous game
 # TODO: Fix edit messages
 # TODO: Add quit game ability
 # TODO: Add command explanation
 # TODO: Add game explanation
+# TODO: Abstract reading of player names into standalone function
+# FIXME: Add victory message if no one dies
+# FIXME: Doppelganger mason doesn't send message
+# FIXME: Double message if there's a tie and hunter kills someone who was already voted to die
+# FIXME: "Discussion will now last 1 minutes."
 
 with open('token', 'rb') as f:
     config = pickle.load(f)
@@ -207,7 +212,7 @@ class OneNightState():
     def process_message_troublemaker(self, data):
         if self.is_dm_to_self(data):
             body = data['text'].lower()
-            switched_players = body.split(', ')
+            switched_players = body.split(' ').replace(',', '')
             if (len(switched_players) == 2 and
                 False not in [self.is_player_in_current_game(p) for p in switched_players]):
                 ids = [self.names_to_ids[p] for p in switched_players]
@@ -292,11 +297,6 @@ class OneNightState():
                         self.announce("Discussion will now last %d minutes." % self.discussion_time)
                     except ValueError:
                         pass
-
-
-
-
-
 
     def process_message_signup(self, data):
         if self.is_message_in_onenight_channel(data):
@@ -577,7 +577,7 @@ class OneNightState():
                 self.role_dispatch(role)
 
         self.announce("Everyone, wake up!")
-        self.announce("You now have 3 minutes to discuss!")
+        self.announce("You now have %d minutes to discuss!" % self.discussion_time)
         sleep(2 if DEBUG else (60*self.discussion_time) - 10)
         self.announce("There are 10 seconds left in discussion!")
         for i in range(10, 0, -1):
@@ -618,7 +618,8 @@ class OneNightState():
                 self.announce("%s was the %s!" % (self.ids_to_names[k], role))
                 if role == 'hunter':
                     hunter_vote = self.voting_dict[k]
-                    self.announce("%s voted for %s, so they also die!" % (self.ids_to_names[k], hunter_vote))
+                    self.announce("%s voted for %s, so they also die!" % (
+                        self.ids_to_names[k], self.ids_to_names[hunter_vote]))
                     hunter_kill = self.players[hunter_vote]
                     self.announce("%s was the %s!" % (self.ids_to_names[hunter_vote], hunter_kill))
                     killed_roles.append(hunter_kill)
